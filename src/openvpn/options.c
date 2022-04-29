@@ -461,8 +461,12 @@ static const char usage_message[] =
     "--client-to-client : Internally route client-to-client traffic.\n"
     "--duplicate-cn  : Allow multiple clients with the same common name to\n"
     "                  concurrently connect.\n"
+    "--disable-preempt : Disable new client preempt the old client."
+    "--check-client-cn-pre cmd : Run command cmd prepare for check client common name.\n"
+    "--check-client-cn cmd : Run command cmd on check client common name.\n"
     "--client-connect cmd : Run command cmd on client connection.\n"
     "--client-disconnect cmd : Run command cmd on client disconnection.\n"
+    "--server-id ID : Tenant unique server ID.\n"
     "--client-config-dir dir : Directory for custom client config files.\n"
     "--ccd-exclusive : Refuse connection unless custom client config is found.\n"
     "--tmp-dir dir   : Temporary directory, used for --client-connect return file and plugin communication.\n"
@@ -996,6 +1000,7 @@ setenv_settings(struct env_set *es, const struct options *o)
     setenv_int(es, "daemon_log_redirect", o->log);
     setenv_unsigned(es, "daemon_start_time", time(NULL));
     setenv_int(es, "daemon_pid", platform_getpid());
+    setenv_str(es, "server_id", o->tenant_server_id);
 
     if (o->connection_list)
     {
@@ -1261,7 +1266,10 @@ show_p2mp_parms(const struct options *o)
     SHOW_INT(virtual_hash_size);
     SHOW_STR(client_connect_script);
     SHOW_STR(learn_address_script);
+    SHOW_STR(check_client_cn_pre_script);
+    SHOW_STR(check_client_cn_script);
     SHOW_STR(client_disconnect_script);
+    SHOW_STR(tenant_server_id);
     SHOW_STR(client_config_dir);
     SHOW_BOOL(ccd_exclusive);
     SHOW_STR(tmp_dir);
@@ -1273,6 +1281,7 @@ show_p2mp_parms(const struct options *o)
     msg(D_SHOW_PARMS, "  push_ifconfig_ipv6_remote = %s", print_in6_addr(o->push_ifconfig_ipv6_remote, 0, &gc));
     SHOW_BOOL(enable_c2c);
     SHOW_BOOL(duplicate_cn);
+    SHOW_BOOL(disable_preempt);
     SHOW_INT(cf_max);
     SHOW_INT(cf_per);
     SHOW_INT(max_clients);
@@ -2375,6 +2384,14 @@ options_postprocess_verify_ce(const struct options *options, const struct connec
         {
             msg(M_USAGE, "--learn-address requires --mode server");
         }
+        if (options->check_client_cn_pre_script)
+        {
+            msg(M_USAGE, "--check-client-cn-pre requires --mode server");
+        }
+        if (options->check_client_cn_script)
+        {
+            msg(M_USAGE, "--check-client-cn requires --mode server");
+        }
         if (options->client_connect_script)
         {
             msg(M_USAGE, "--client-connect requires --mode server");
@@ -2382,6 +2399,10 @@ options_postprocess_verify_ce(const struct options *options, const struct connec
         if (options->client_disconnect_script)
         {
             msg(M_USAGE, "--client-disconnect requires --mode server");
+        }
+        if (options->tenant_server_id)
+        {
+            msg(M_USAGE, "--server-id requires --mode server");
         }
         if (options->client_config_dir || options->ccd_exclusive)
         {
@@ -2394,6 +2415,10 @@ options_postprocess_verify_ce(const struct options *options, const struct connec
         if (options->duplicate_cn)
         {
             msg(M_USAGE, "--duplicate-cn requires --mode server");
+        }
+        if (options->disable_preempt)
+        {
+            msg(M_USAGE, "--disable-preempt requires --mode server");
         }
         if (options->cf_max || options->cf_per)
         {
@@ -3780,7 +3805,7 @@ options_warning_safe_scan2(const int msglevel,
                 {
                     if (report_inconsistent)
                     {
-                        msg(msglevel, "WARNING: '%s' is used inconsistently, %s='%s', %s='%s'",
+                        msg(msglevel, "OPENVPN/OPTIONS_WARNING: '%s' is used inconsistently, %s='%s', %s='%s'",
                             safe_print(p1_prefix, &gc),
                             b1_name,
                             safe_print(p1, &gc),
@@ -3792,7 +3817,7 @@ options_warning_safe_scan2(const int msglevel,
             }
         }
 
-        msg(msglevel, "WARNING: '%s' is present in %s config but missing in %s config, %s='%s'",
+        msg(msglevel, "OPENVPN/OPTIONS_WARNING: '%s' is present in %s config but missing in %s config, %s='%s'",
             safe_print(p1_prefix, &gc),
             b1_name,
             b2_name,
@@ -6767,6 +6792,26 @@ add_option(struct options *options,
         set_user_script(options, &options->client_disconnect_script,
                         p[1], "client-disconnect", true);
     }
+    else if (streq(p[0], "check-client-cn-pre") && p[1])
+    {
+        VERIFY_PERMISSION(OPT_P_SCRIPT);
+        if (!no_more_than_n_args(msglevel, p, 2, NM_QUOTE_HINT))
+        {
+                        goto err;
+        }
+        set_user_script(options, &options->check_client_cn_pre_script,
+                        p[1], "check-client-cn-pre", true);
+    }
+    else if (streq(p[0], "check-client-cn") && p[1])
+    {
+        VERIFY_PERMISSION(OPT_P_SCRIPT);
+        if (!no_more_than_n_args(msglevel, p, 2, NM_QUOTE_HINT))
+        {
+            goto err;
+        }
+        set_user_script(options, &options->check_client_cn_script,
+                        p[1], "check-client-cn", true);
+    }
     else if (streq(p[0], "learn-address") && p[1])
     {
         VERIFY_PERMISSION(OPT_P_SCRIPT);
@@ -6781,6 +6826,11 @@ add_option(struct options *options,
     {
         VERIFY_PERMISSION(OPT_P_GENERAL);
         options->tmp_dir = p[1];
+    }
+    else if (streq(p[0], "server-id") && p[1])
+    {
+        VERIFY_PERMISSION(OPT_P_GENERAL);
+        options->tenant_server_id = p[1];
     }
     else if (streq(p[0], "client-config-dir") && p[1] && !p[2])
     {
@@ -6834,6 +6884,11 @@ add_option(struct options *options,
     {
         VERIFY_PERMISSION(OPT_P_GENERAL);
         options->duplicate_cn = true;
+    }
+    else if (streq(p[0], "disable-preempt") && !p[1])
+    {
+        VERIFY_PERMISSION(OPT_P_GENERAL);
+        options->disable_preempt = true;
     }
     else if (streq(p[0], "iroute") && p[1] && !p[3])
     {

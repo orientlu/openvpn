@@ -415,6 +415,9 @@ struct options
     const char *client_connect_script;
     const char *client_disconnect_script;
     const char *learn_address_script;
+    const char *tenant_server_id;
+    const char *check_client_cn_pre_script;
+    const char *check_client_cn_script;
     const char *client_config_dir;
     bool ccd_exclusive;
     bool disable;
@@ -436,6 +439,7 @@ struct options
     bool push_ifconfig_ipv6_blocked;                    /* IPv6 */
     bool enable_c2c;
     bool duplicate_cn;
+    bool disable_preempt; /* drop the new connection if exist old connection */
     int cf_max;
     int cf_per;
     int max_clients;

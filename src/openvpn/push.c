@@ -376,9 +376,18 @@ prepare_push_reply(struct context *c, struct gc_arena *gc,
         int r = sscanf(optstr, "IV_PROTO=%d", &proto);
         if ((r == 1) && (proto >= 2))
         {
-            push_option_fmt(gc, push_list, M_USAGE, "peer-id %d",
+            if (tls_multi->peer_id != MAX_PEER_ID)
+            {
+
+                push_option_fmt(gc, push_list, M_USAGE, "peer-id %d",
                             tls_multi->peer_id);
-            tls_multi->use_peer_id = true;
+                tls_multi->use_peer_id = true;
+            }
+            else
+            {
+                push_option_fmt(gc, push_list, M_USAGE, "peer-id %d",
+                            -1);
+            }
         }
     }
 

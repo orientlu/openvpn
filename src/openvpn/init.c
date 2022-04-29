@@ -4460,6 +4460,13 @@ inherit_context_child(struct context *dest,
         dest->c2.link_socket_info->lsa = &dest->c1.link_socket_addr;
         dest->c2.link_socket_info->connection_established = false;
     }
+
+    /* should initialize the peer_id to invalid value,
+    * avoid to remove the instance which peer_id is zero
+    * when create a new instance failed. */
+    if (dest->c2.tls_multi) {
+      dest->c2.tls_multi->peer_id = MAX_PEER_ID;
+    }
 }
 
 void
